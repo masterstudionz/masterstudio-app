@@ -1090,6 +1090,10 @@ function toggleJobDetail(jobId, jobName) {
       </div>
       ${workHTML ? `<div class="job-detail-section">Work log</div>${workHTML}` : ''}
       ${upHTML   ? `<div class="job-detail-section">Milestones & events</div>${upHTML}` : ''}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-secondary btn-sm" style="flex:1" onclick="archiveJob('${jobId}','${jobName.replace(/'/g,"\\'")}')">Archive</button>
+        <button class="btn btn-sm" style="flex:1;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5" onclick="deleteJobConfirm('${jobId}','${jobName.replace(/'/g,"\\'")}')">Delete</button>
+      </div>
     `;
   }, () => {
     detail.innerHTML = '<div style="font-size:13px;color:var(--muted)">Couldn\'t load entries — check connection.</div>';
@@ -1103,6 +1107,31 @@ function populateJobSelects() {
     )
   ].join('');
   document.getElementById('entryJob').innerHTML = opts;
+}
+
+function archiveJob(id, name) {
+  rpc('updateJobStatus', { id, status: 'On Hold' }, res => {
+    if (res && res.success) {
+      showToast(name + ' archived');
+      calLoaded = false; // force calendar refresh
+      loadJobs();
+    } else {
+      showToast('Error archiving job');
+    }
+  });
+}
+
+function deleteJobConfirm(id, name) {
+  if (!confirm('Permanently delete "' + name + '"? This cannot be undone.')) return;
+  rpc('deleteJob', { id }, res => {
+    if (res && res.success) {
+      showToast(name + ' deleted');
+      calLoaded = false;
+      loadJobs();
+    } else {
+      showToast('Error deleting job');
+    }
+  });
 }
 
 function toggleQuickAddJob() {
