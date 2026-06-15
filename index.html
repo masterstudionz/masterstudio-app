@@ -404,6 +404,20 @@
   }
   .job-item:last-child { border-bottom: none; }
   .job-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .job-item { cursor: pointer; }
+  .job-chevron { color: var(--muted); font-size: 18px; transition: transform .2s; }
+  .job-item.open .job-chevron { transform: rotate(90deg); }
+  .job-detail { display: none; padding: 12px 0 4px; border-top: 1px solid var(--border); margin-top: 10px; }
+  .job-detail.open { display: block; }
+  .job-stat { font-size: 13px; color: var(--muted); margin-bottom: 10px; display: flex; gap: 20px; }
+  .job-stat-val { font-size: 18px; font-weight: 700; color: var(--text); display: block; }
+  .job-entry-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .job-entry-row:last-child { border-bottom: none; }
+  .job-entry-date { color: var(--muted); min-width: 48px; flex-shrink: 0; padding-top: 1px; }
+  .job-entry-type { flex-shrink: 0; }
+  .job-entry-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-entry-hrs  { color: var(--green); font-weight: 600; flex-shrink: 0; }
+  .job-detail-section { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 12px 0 6px; }
   .job-info { flex: 1; }
   .job-name   { font-size: 15px; font-weight: 600; }
   .job-client { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -1004,15 +1018,82 @@ function renderJobList() {
     return;
   }
   el.innerHTML = active.map(j => `
-    <div class="job-item">
-      <div class="job-dot" style="background:${j.color}"></div>
-      <div class="job-info">
-        <div class="job-name">${esc(j.name)}</div>
-        ${j.client ? `<div class="job-client">${esc(j.client)}</div>` : ''}
+    <div>
+      <div class="job-item" id="job-item-${esc(j.id)}" onclick="toggleJobDetail('${esc(j.id)}','${esc(j.name)}')">
+        <div class="job-dot" style="background:${j.color}"></div>
+        <div class="job-info">
+          <div class="job-name">${esc(j.name)}</div>
+          ${j.client ? `<div class="job-client">${esc(j.client)}</div>` : ''}
+        </div>
+        <span class="job-status status-${j.status.toLowerCase().replace(' ','-')}">${esc(j.status)}</span>
+        <span class="job-chevron">›</span>
       </div>
-      <span class="job-status status-${j.status.toLowerCase().replace(' ','-')}">${esc(j.status)}</span>
+      <div class="job-detail" id="job-detail-${esc(j.id)}">
+        <div class="cal-empty" style="padding:16px 0">Loading…</div>
+      </div>
     </div>
   `).join('');
+}
+
+function toggleJobDetail(jobId, jobName) {
+  const item   = document.getElementById('job-item-' + jobId);
+  const detail = document.getElementById('job-detail-' + jobId);
+  const isOpen = detail.classList.contains('open');
+
+  // Close all others
+  document.querySelectorAll('.job-detail.open').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.job-item.open').forEach(d => d.classList.remove('open'));
+
+  if (isOpen) return; // was open, just close it
+
+  item.classList.add('open');
+  detail.classList.add('open');
+
+  // Load entries for this job
+  rpc('getDiaryEntries', 365, data => {
+    const entries = (data || []).filter(e =>
+      e.jobName === jobName || e.jobId === jobId
+    );
+
+    if (!entries.length) {
+      detail.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:4px 0">No entries logged yet for this job.</div>';
+      return;
+    }
+
+    const totalHours = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
+    const workEntries = entries.filter(e => !e.entryType || e.entryType === 'work')
+      .sort((a,b) => b.date.localeCompare(a.date)).slice(0, 10);
+    const upcoming = entries.filter(e => e.entryType && e.entryType !== 'work')
+      .sort((a,b) => a.date.localeCompare(b.date));
+
+    const typeIcon = { milestone:'📦', deadline:'🔴', event:'📅' };
+    const fmtDate  = iso => { const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short'}); };
+
+    const workHTML = workEntries.map(e => `
+      <div class="job-entry-row">
+        <span class="job-entry-date">${fmtDate(e.date)}</span>
+        <span class="job-entry-text">${esc(e.progressNotes || '—')}</span>
+        ${e.hours ? `<span class="job-entry-hrs">${e.hours}h</span>` : ''}
+      </div>`).join('');
+
+    const upHTML = upcoming.map(e => `
+      <div class="job-entry-row">
+        <span class="job-entry-date">${fmtDate(e.date)}</span>
+        <span class="job-entry-type">${typeIcon[e.entryType] || '📌'}</span>
+        <span class="job-entry-text">${esc(e.progressNotes || e.entryType)}</span>
+      </div>`).join('');
+
+    detail.innerHTML = `
+      <div class="job-stat">
+        <div><span class="job-stat-val">${totalHours.toFixed(1)}h</span>logged</div>
+        <div><span class="job-stat-val">${workEntries.length}</span>entries</div>
+      </div>
+      ${workHTML ? `<div class="job-detail-section">Work log</div>${workHTML}` : ''}
+      ${upHTML   ? `<div class="job-detail-section">Milestones & events</div>${upHTML}` : ''}
+    `;
+  }, () => {
+    detail.innerHTML = '<div style="font-size:13px;color:var(--muted)">Couldn\'t load entries — check connection.</div>';
+  });
 }
 
 function populateJobSelects() {
@@ -1040,7 +1121,7 @@ function saveQuickJob() {
     startDate: new Date().toISOString().split('T')[0],
     notes: '',
     color: '#2D5A3D',
-    status: 'active'
+    status: 'Active'
   };
   rpc('addJob', data, result => {
     if (result && result.success) {
