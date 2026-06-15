@@ -1042,19 +1042,21 @@ function startRecording() {
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   recognition = new SpeechRecognition();
-  recognition.continuous     = !isMobile; // mobile can't handle continuous reliably
+  recognition.continuous     = true;
   recognition.interimResults = true;
   recognition.lang           = 'en-NZ';
 
   let finalText = document.getElementById('transcriptBox').textContent.replace('Your speech will appear here…','').trim();
-  let lastResultIndex = 0;
 
   recognition.onresult = e => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
-        finalText += (finalText ? ' ' : '') + e.results[i][0].transcript.trim();
-        lastResultIndex = i + 1;
+        const word = e.results[i][0].transcript.trim();
+        // Deduplicate: only add if not already ending with this text
+        if (!finalText.endsWith(word)) {
+          finalText += (finalText ? ' ' : '') + word;
+        }
       } else {
         interim = e.results[i][0].transcript;
       }
@@ -1073,8 +1075,12 @@ function startRecording() {
     stopRecording();
   };
 
-  // On mobile, auto-restart after each phrase ends
-  recognition.onend = () => { if (isRecording) { lastResultIndex = 0; recognition.start(); } };
+  // Mobile: single-shot — stops after natural pause, tap again to continue (no restart = no echo)
+  // Desktop: auto-restart to keep listening continuously
+  recognition.onend = () => {
+    if (isRecording && !isMobile) recognition.start();
+    else if (isMobile) stopRecording();
+  };
   recognition.start();
 
   isRecording = true;
