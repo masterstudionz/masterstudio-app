@@ -515,6 +515,16 @@
   .cal-empty-day { font-size: 13px; color: var(--border); padding: 4px 0 8px 19px; }
   .cal-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 40px 0; }
 
+  /* ── Job bands ── */
+  .cal-bands { margin-bottom: 4px; display: flex; flex-direction: column; gap: 3px; }
+  .cal-band { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .cal-band-end { font-size: 11px; font-weight: 400; color: var(--muted); flex-shrink: 0; margin-left: 6px; }
+  .cal-day.is-past .cal-band { opacity: .55; }
+
+  /* ── Job schedule inputs ── */
+  .sched-row { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .sched-row input[type="date"] { flex: 1; min-height: 36px; font-size: 13px; min-width: 100px; }
+
   /* ── Schedule modal ── */
   .modal-overlay {
     display: none; position: fixed; inset: 0;
@@ -1049,25 +1059,47 @@ function toggleJobDetail(jobId, jobName) {
   item.classList.add('open');
   detail.classList.add('open');
 
+  // Schedule section — rendered immediately from jobs array
+  const jobObj     = jobs.find(j => j.id == jobId);
+  const schedStart = jobObj?.scheduledStart || '';
+  const schedEnd   = jobObj?.scheduledEnd   || '';
+  const safeId     = jobId.replace(/[^a-zA-Z0-9]/g, '_');
+  detail.innerHTML = `
+    <div class="job-detail-section" style="margin-top:6px">Scheduled period</div>
+    <div class="sched-row">
+      <input type="date" id="sched-start-${safeId}" value="${schedStart}">
+      <span style="color:var(--muted);font-size:13px;flex-shrink:0">to</span>
+      <input type="date" id="sched-end-${safeId}" value="${schedEnd}">
+      <button class="btn btn-secondary btn-sm" onclick="saveJobSchedule('${jobId}')">Set</button>
+    </div>
+    <div id="job-entries-${safeId}"><div class="cal-empty" style="padding:6px 0">Loading…</div></div>
+  `;
+
+  const fmtDate  = iso => { const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short'}); };
+  const archiveBtns = `
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="archiveJob('${jobId}','${jobName.replace(/'/g,"\\'")}')">Archive</button>
+      <button class="btn btn-sm" style="flex:1;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5" onclick="deleteJobConfirm('${jobId}','${jobName.replace(/'/g,"\\'")}')">Delete</button>
+    </div>`;
+
   // Load entries for this job
   rpc('getDiaryEntries', 365, data => {
-    const entries = (data || []).filter(e =>
-      e.jobName === jobName || e.jobId === jobId
-    );
+    const innerEl = document.getElementById('job-entries-' + safeId);
+    if (!innerEl) return;
+    const entries = (data || []).filter(e => e.jobName === jobName || e.jobId === jobId);
 
     if (!entries.length) {
-      detail.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:4px 0">No entries logged yet for this job.</div>';
+      innerEl.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:4px 0">No entries logged yet for this job.</div>' + archiveBtns;
       return;
     }
 
-    const totalHours = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
+    const totalHours  = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
     const workEntries = entries.filter(e => !e.entryType || e.entryType === 'work')
       .sort((a,b) => b.date.localeCompare(a.date)).slice(0, 10);
-    const upcoming = entries.filter(e => e.entryType && e.entryType !== 'work')
+    const upcoming    = entries.filter(e => e.entryType && e.entryType !== 'work')
       .sort((a,b) => a.date.localeCompare(b.date));
 
     const typeIcon = { milestone:'📦', deadline:'🔴', event:'📅' };
-    const fmtDate  = iso => { const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-NZ',{day:'numeric',month:'short'}); };
 
     const workHTML = workEntries.map(e => `
       <div class="job-entry-row">
@@ -1083,20 +1115,18 @@ function toggleJobDetail(jobId, jobName) {
         <span class="job-entry-text">${esc(e.progressNotes || e.entryType)}</span>
       </div>`).join('');
 
-    detail.innerHTML = `
+    innerEl.innerHTML = `
       <div class="job-stat">
         <div><span class="job-stat-val">${totalHours.toFixed(1)}h</span>logged</div>
         <div><span class="job-stat-val">${workEntries.length}</span>entries</div>
       </div>
       ${workHTML ? `<div class="job-detail-section">Work log</div>${workHTML}` : ''}
       ${upHTML   ? `<div class="job-detail-section">Milestones & events</div>${upHTML}` : ''}
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-secondary btn-sm" style="flex:1" onclick="archiveJob('${jobId}','${jobName.replace(/'/g,"\\'")}')">Archive</button>
-        <button class="btn btn-sm" style="flex:1;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5" onclick="deleteJobConfirm('${jobId}','${jobName.replace(/'/g,"\\'")}')">Delete</button>
-      </div>
+      ${archiveBtns}
     `;
   }, () => {
-    detail.innerHTML = '<div style="font-size:13px;color:var(--muted)">Couldn\'t load entries — check connection.</div>';
+    const innerEl = document.getElementById('job-entries-' + safeId);
+    if (innerEl) innerEl.innerHTML = '<div style="font-size:13px;color:var(--muted)">Couldn\'t load entries — check connection.</div>';
   });
 }
 
@@ -1130,6 +1160,22 @@ function deleteJobConfirm(id, name) {
       loadJobs();
     } else {
       showToast('Error deleting job');
+    }
+  });
+}
+
+function saveJobSchedule(jobId) {
+  const safeId = jobId.replace(/[^a-zA-Z0-9]/g, '_');
+  const start  = document.getElementById('sched-start-' + safeId)?.value || '';
+  const end    = document.getElementById('sched-end-'   + safeId)?.value || '';
+  rpc('updateJobSchedule', { id: jobId, scheduledStart: start, scheduledEnd: end }, res => {
+    if (res && res.success) {
+      showToast('Schedule saved ✓');
+      const j = jobs.find(j => j.id == jobId);
+      if (j) { j.scheduledStart = start; j.scheduledEnd = end; }
+      calLoaded = false;
+    } else {
+      showToast('Error saving schedule');
     }
   });
 }
@@ -1727,6 +1773,22 @@ function renderCal() {
     const mon     = d.toLocaleDateString('en-NZ', { month: 'short' });
     const entries = byDate[iso] || [];
 
+    // Job bands — jobs with a scheduled period covering this day
+    const jobBands = jobs.filter(j => j.scheduledStart && j.scheduledEnd && j.scheduledStart <= iso && j.scheduledEnd >= iso);
+    const bandsHTML = jobBands.length
+      ? `<div class="cal-bands">${jobBands.map(j => {
+          const isFirst = j.scheduledStart === iso;
+          const isLast  = j.scheduledEnd   === iso;
+          const endLabel = isLast  ? 'ends today'
+                         : isFirst ? 'until ' + formatDate(j.scheduledEnd)
+                         : '';
+          return `<div class="cal-band" style="background:${j.color}20;border-left:3px solid ${j.color}">
+            <span class="cal-band-name">${isFirst ? '▶ ' : ''}${esc(j.name)}</span>
+            ${endLabel ? `<span class="cal-band-end">${endLabel}</span>` : ''}
+          </div>`;
+        }).join('')}</div>`
+      : '';
+
     const entriesHTML = entries.length
       ? entries.map(e => {
           const job   = jobs.find(j => j.id === e.jobId || j.name === e.jobName);
@@ -1749,6 +1811,7 @@ function renderCal() {
         <span>${dow} <span class="cal-day-num">${dayNum}</span> ${mon}</span>
         ${isToday ? '<span style="font-size:11px;font-weight:700;background:var(--green);color:white;padding:2px 8px;border-radius:10px">Today</span>' : ''}
       </div>
+      ${bandsHTML}
       ${entriesHTML}
     </div>`;
   }).join('');
