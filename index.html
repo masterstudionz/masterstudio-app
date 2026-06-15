@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Master Studio</title>
+<title>Studio Manager</title>
 <style>
   :root {
     --green:   #2D5A3D;
@@ -502,7 +502,7 @@
 <!-- ── Header ── -->
 <header class="header">
   <div>
-    <div class="header-brand">Master Studio</div>
+    <div class="header-brand">Studio Manager</div>
     <div class="header-sub">Design. Studio. Manufacture.</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -1083,6 +1083,11 @@ function startRecording() {
   };
   recognition.start();
 
+  // Keep screen awake while recording
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(lock => { window._wakeLock = lock; }).catch(() => {});
+  }
+
   isRecording = true;
   const btn = document.getElementById('micBtn');
   btn.classList.add('recording');
@@ -1093,6 +1098,7 @@ function startRecording() {
 
 function stopRecording() {
   if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
+  if (window._wakeLock) { window._wakeLock.release(); window._wakeLock = null; }
   isRecording = false;
   const btn = document.getElementById('micBtn');
   btn.classList.remove('recording');
