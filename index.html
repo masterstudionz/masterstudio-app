@@ -222,6 +222,7 @@
   .type-btn.active.t-milestone { color: var(--timber); }
   .type-btn.active.t-deadline  { color: var(--danger); }
   .type-btn.active.t-event     { color: var(--blue); }
+  .type-btn.active.t-newjob    { color: #7c3aed; }
 
   /* ── Entry type pill (in history) ── */
   .type-pill {
@@ -592,6 +593,7 @@
       <button class="type-btn t-milestone" onclick="setEntryType('milestone')">📦 Milestone</button>
       <button class="type-btn t-deadline" onclick="setEntryType('deadline')">🔴 Deadline</button>
       <button class="type-btn t-event" onclick="setEntryType('event')">📅 Event</button>
+      <button class="type-btn t-newjob" onclick="setEntryType('newjob')">➕ New Job</button>
     </div>
 
     <div class="field">
@@ -601,9 +603,28 @@
 
     <div class="field" id="fieldJob">
       <label>Job</label>
-      <select id="entryJob">
-        <option value="">— Select a job —</option>
-      </select>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="entryJob" style="flex:1">
+          <option value="">— Select a job —</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="toggleQuickAddJob()" style="white-space:nowrap;flex-shrink:0">+ New</button>
+      </div>
+    </div>
+
+    <!-- Quick add job — inline on entry panel -->
+    <div id="quickAddJobPanel" style="display:none;background:var(--bg);border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid var(--border)">
+      <div class="field">
+        <label>Job name *</label>
+        <input type="text" id="quickJobName" placeholder="e.g. Henderson Kitchen">
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <label>Client</label>
+        <input type="text" id="quickJobClient" placeholder="e.g. John Henderson">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveQuickJob()">Add job</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleQuickAddJob()">Cancel</button>
+      </div>
     </div>
 
     <!-- Work-only fields -->
@@ -860,12 +881,21 @@ function setEntryType(type) {
   document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('.t-' + type).classList.add('active');
 
+  const isWork   = type === 'work';
+  const isNewJob = type === 'newjob';
+
   // Show/hide work-specific fields
-  const isWork = type === 'work';
   document.getElementById('workFields').style.display = isWork ? '' : 'none';
 
+  // Show/hide the quick-add-job panel; hide job selector when adding a new job
+  document.getElementById('quickAddJobPanel').style.display = isNewJob ? 'block' : 'none';
+  document.getElementById('fieldJob').style.display = isNewJob ? 'none' : '';
+
+  // Focus job name field when switching to newjob
+  if (isNewJob) setTimeout(() => document.getElementById('quickJobName').focus(), 100);
+
   // Update notes label
-  const labels = { work: 'Progress notes', milestone: 'Description', deadline: 'Description', event: 'Description' };
+  const labels = { work: 'Progress notes', milestone: 'Description', deadline: 'Description', event: 'Description', newjob: 'Notes' };
   document.getElementById('notesLabel').textContent = labels[type] || 'Notes';
 
   // Update placeholder
@@ -873,7 +903,8 @@ function setEntryType(type) {
     work:      'What did you work on?',
     milestone: 'e.g. Hamptons panels arriving, ready to start installation',
     deadline:  'e.g. Ticehurst kitchen due for client handover',
-    event:     'e.g. Site meeting with Cameron at 2pm'
+    event:     'e.g. Site meeting with Cameron at 2pm',
+    newjob:    'Any notes about this job…'
   };
   document.getElementById('entryProgress').placeholder = placeholders[type] || 'Notes…';
 
@@ -882,7 +913,8 @@ function setEntryType(type) {
     work:      'Creates an all-day event for this entry',
     milestone: 'Adds this milestone to your calendar',
     deadline:  'Adds this deadline to your calendar',
-    event:     'Adds this event to your calendar'
+    event:     'Adds this event to your calendar',
+    newjob:    'Adds a start date event to your calendar'
   };
   document.getElementById('calToggleDesc').textContent = calDescs[type];
 }
@@ -981,6 +1013,37 @@ function populateJobSelects() {
   document.getElementById('schedJob').innerHTML = opts;
 }
 
+function toggleQuickAddJob() {
+  const panel = document.getElementById('quickAddJobPanel');
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  if (open) document.getElementById('quickJobName').focus();
+}
+
+function saveQuickJob() {
+  const name = document.getElementById('quickJobName').value.trim();
+  if (!name) { showToast('Job name is required'); return; }
+  const data = {
+    name,
+    client: document.getElementById('quickJobClient').value.trim(),
+    startDate: new Date().toISOString().split('T')[0],
+    notes: '',
+    color: '#2D5A3D',
+    status: 'active'
+  };
+  rpc('addJob', data, result => {
+    if (result && result.success) {
+      showToast('Job added!');
+      document.getElementById('quickJobName').value = '';
+      document.getElementById('quickJobClient').value = '';
+      toggleQuickAddJob();
+      loadJobs();
+    } else {
+      showToast('Error adding job — check connection');
+    }
+  });
+}
+
 function toggleAddJob() {
   const f = document.getElementById('addJobForm');
   f.classList.toggle('open');
@@ -1046,22 +1109,22 @@ function startRecording() {
   recognition.interimResults = true;
   recognition.lang           = 'en-NZ';
 
-  // Pre-existing text in the box (from a previous recording session)
-  const preExisting = document.getElementById('transcriptBox').textContent.replace('Your speech will appear here…','').trim();
-  // utterances[i] = latest final text for result index i (overwrites, never appends)
-  const utterances = {};
+  // sessionText accumulates across restart cycles; utterances tracks within one session
+  let sessionText = document.getElementById('transcriptBox').textContent.replace('Your speech will appear here…','').trim();
+  let utterances = {};
 
   recognition.onresult = e => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
+        // Overwrite (not append) so progressive finals don't double up
         utterances[i] = e.results[i][0].transcript.trim();
       } else {
         interim = e.results[i][0].transcript;
       }
     }
     const recognized = Object.values(utterances).filter(Boolean).join(' ');
-    const full = [preExisting, recognized].filter(Boolean).join(' ');
+    const full = [sessionText, recognized].filter(Boolean).join(' ');
     const box = document.getElementById('transcriptBox');
     box.textContent = (full + (interim ? ' ' + interim : '')).trim() || 'Your speech will appear here…';
     liveText = box.textContent !== 'Your speech will appear here…' ? box.textContent : '';
@@ -1076,11 +1139,14 @@ function startRecording() {
     stopRecording();
   };
 
-  // Mobile: single-shot — stops after natural pause, tap again to continue (no restart = no echo)
-  // Desktop: auto-restart to keep listening continuously
+  // When recognition ends (pause or timeout), flush text and restart — never stops mid-dictation
   recognition.onend = () => {
-    if (isRecording && !isMobile) recognition.start();
-    else if (isMobile) stopRecording();
+    if (isRecording) {
+      const recognized = Object.values(utterances).filter(Boolean).join(' ');
+      sessionText = [sessionText, recognized].filter(Boolean).join(' ');
+      utterances = {};
+      recognition.start();
+    }
   };
   recognition.start();
 
@@ -1171,6 +1237,9 @@ function parseDateFromText(text) {
 function detectEntryType(text, dateISO) {
   const lc = text.toLowerCase();
 
+  // New job / new project phrases — check first
+  if (/new job|new project|add a job|add job|starting a new job|new client job|got a new job/.test(lc)) return 'newjob';
+
   // Future date = likely not a work entry
   if (isFutureDate(dateISO)) {
     if (/\bdue\b|deadline|by (?:end|close|friday|monday|tuesday|wednesday|thursday|the)/.test(lc)) return 'deadline';
@@ -1239,6 +1308,14 @@ function parseTranscript() {
 
     if (!document.getElementById('entryProgress').value)
       document.getElementById('entryProgress').value = text;
+
+  } else if (detected === 'newjob') {
+    // Try to extract job name and client from the dictation
+    // e.g. "new job called Henderson Kitchen for John Henderson"
+    const nameMatch = text.match(/(?:new\s+job|new\s+project|add\s+(?:a\s+)?job)\s+(?:called?|named?|:)?\s*([A-Z][^,.\n]+?)(?:\s+for\s+|\s+client\s+|[,.\n]|$)/i);
+    const clientMatch = text.match(/(?:\bfor\b|\bclient\b)\s+([A-Z][a-zA-Z\s]+?)(?:\s+job|\s+project|[,.\n]|$)/i);
+    if (nameMatch) document.getElementById('quickJobName').value = nameMatch[1].trim();
+    if (clientMatch) document.getElementById('quickJobClient').value = clientMatch[1].trim();
 
   } else {
     // For milestones/deadlines/events — put text in notes
