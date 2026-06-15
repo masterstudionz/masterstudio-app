@@ -906,8 +906,7 @@ function switchPanel(name) {
 // ─── CONFIG — paste your Apps Script deployment URL here ──────────────────
 // After deploying Code.gs as a web app, copy the URL and paste it below.
 // Deploy settings: Execute as Me | Anyone can access (even anonymous)
-const API_URL = 'https://script.google.com/macros/s/AKfycbzHJuphVNYZjYjyL5UaHHTaGu5jcttTmKNBhjJe-u0brp3cgadi_Ab3jrXw3njlGCsWSg/exec'
-;
+const API_URL = 'https://script.google.com/macros/s/AKfycbzHJuphVNYZjYjyL5UaHHTaGu5jcttTmKNBhjJe-u0brp3cgadi_Ab3jrXw3njlGCsWSg/exec';
 
 // ─── API (fetch-based, replaces google.script.run) ────────────────────────
 function rpc(fn, args, onSuccess, onError) {
@@ -1040,18 +1039,25 @@ function startRecording() {
     return;
   }
 
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
   recognition = new SpeechRecognition();
-  recognition.continuous     = true;
+  recognition.continuous     = !isMobile; // mobile can't handle continuous reliably
   recognition.interimResults = true;
   recognition.lang           = 'en-NZ';
 
   let finalText = document.getElementById('transcriptBox').textContent.replace('Your speech will appear here…','').trim();
+  let lastResultIndex = 0;
 
   recognition.onresult = e => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) finalText += (finalText ? ' ' : '') + e.results[i][0].transcript.trim();
-      else interim = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        finalText += (finalText ? ' ' : '') + e.results[i][0].transcript.trim();
+        lastResultIndex = i + 1;
+      } else {
+        interim = e.results[i][0].transcript;
+      }
     }
     const box = document.getElementById('transcriptBox');
     box.textContent = finalText + (interim ? ' ' + interim : '');
@@ -1067,7 +1073,8 @@ function startRecording() {
     stopRecording();
   };
 
-  recognition.onend = () => { if (isRecording) recognition.start(); };
+  // On mobile, auto-restart after each phrase ends
+  recognition.onend = () => { if (isRecording) { lastResultIndex = 0; recognition.start(); } };
   recognition.start();
 
   isRecording = true;
