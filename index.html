@@ -479,6 +479,28 @@
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Calendar ── */
+  .cal-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .cal-view-toggle { display: flex; gap: 6px; }
+  .cal-view-btn { flex: 1; padding: 7px 2px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .cal-view-btn.active { background: var(--green); color: white; border-color: var(--green); }
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; }
+  .cal-nav-btn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 22px; line-height: 1; cursor: pointer; }
+  .cal-range-label { font-size: 15px; font-weight: 600; }
+  .cal-day { margin-bottom: 4px; }
+  .cal-day-header { font-size: 12px; font-weight: 700; color: var(--muted); padding: 10px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+  .cal-day-header.is-today { color: var(--green); }
+  .cal-day-num { font-size: 20px; font-weight: 800; color: var(--text); margin-right: 4px; }
+  .cal-day-header.is-today .cal-day-num { color: var(--green); }
+  .cal-entry { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .cal-entry:last-child { border-bottom: none; }
+  .cal-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+  .cal-entry-title { font-size: 14px; font-weight: 600; }
+  .cal-entry-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .cal-day.is-past .cal-entry-title { opacity: .55; }
+  .cal-empty-day { font-size: 13px; color: var(--border); padding: 4px 0 8px 19px; }
+  .cal-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 40px 0; }
+
   /* ── Schedule modal ── */
   .modal-overlay {
     display: none; position: fixed; inset: 0;
@@ -503,8 +525,8 @@
 <!-- ── Header ── -->
 <header class="header">
   <div>
-    <div class="header-brand">Studio Manager</div>
-    <div class="header-sub">Design. Studio. Manufacture.</div>
+    <div class="header-brand">Master Studio</div>
+    <div class="header-sub">Studio Manager</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <div class="header-date" id="headerDate"></div>
@@ -736,34 +758,24 @@
 
 <!-- ══ PANEL: SCHEDULE ══ -->
 <div class="panel" id="panel-schedule">
-  <div class="section-title">Schedule Work</div>
-  <div class="section-sub">Block out time in Google Calendar</div>
+  <div class="section-title">Schedule</div>
+  <div class="section-sub">Your work calendar</div>
 
-  <div class="card">
-    <div class="field">
-      <label>Job</label>
-      <select id="schedJob">
-        <option value="">— Select a job —</option>
-      </select>
+  <div class="cal-controls">
+    <div class="cal-view-toggle">
+      <button class="cal-view-btn active" id="calBtn-week"       onclick="setCalView('week',this)">Week</button>
+      <button class="cal-view-btn"        id="calBtn-day"        onclick="setCalView('day',this)">Day</button>
+      <button class="cal-view-btn"        id="calBtn-fortnight"  onclick="setCalView('fortnight',this)">2 Weeks</button>
+      <button class="cal-view-btn"        id="calBtn-month"      onclick="setCalView('month',this)">Month</button>
     </div>
-    <div class="field">
-      <label>Date</label>
-      <input type="date" id="schedDate">
+    <div class="cal-nav">
+      <button class="cal-nav-btn" onclick="calMove(-1)">‹</button>
+      <div class="cal-range-label" id="calRangeLabel"></div>
+      <button class="cal-nav-btn" onclick="calMove(1)">›</button>
     </div>
-    <div class="field">
-      <label>Start time (optional)</label>
-      <input type="time" id="schedTime">
-    </div>
-    <div class="field">
-      <label>Duration (hours)</label>
-      <input type="number" id="schedHours" placeholder="8" min="0.5" max="24" step="0.5" value="8">
-    </div>
-    <div class="field">
-      <label>Notes</label>
-      <textarea id="schedNotes" placeholder="Any context for this block…" style="min-height:52px"></textarea>
-    </div>
-    <button class="btn btn-primary" onclick="scheduleWork()">Add to calendar</button>
   </div>
+
+  <div id="calContent"><div class="cal-empty">Loading…</div></div>
 </div>
 
 <!-- ── Bottom Nav ── -->
@@ -860,7 +872,6 @@ function setEntryDate() {
   const today = new Date();
   const iso   = today.toISOString().split('T')[0];
   document.getElementById('entryDate').value  = iso;
-  document.getElementById('schedDate').value  = iso;
   document.getElementById('newJobDate').value = iso;
 }
 
@@ -933,6 +944,7 @@ function switchPanel(name) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'schedule') loadCalendar();
 }
 
 // ─── CONFIG — paste your Apps Script deployment URL here ──────────────────
@@ -1010,7 +1022,6 @@ function populateJobSelects() {
     )
   ].join('');
   document.getElementById('entryJob').innerHTML = opts;
-  document.getElementById('schedJob').innerHTML = opts;
 }
 
 function toggleQuickAddJob() {
@@ -1512,35 +1523,127 @@ function loadHistory() {
   });
 }
 
-// ─── Schedule ─────────────────────────────────────────────────────────────
-function scheduleWork() {
-  const jobSel  = document.getElementById('schedJob');
-  const jobId   = jobSel.value;
-  const jobName = jobId ? jobSel.options[jobSel.selectedIndex].text.split(' — ')[0] : '';
-  const client  = jobId ? (jobs.find(j => j.id === jobId) || {}).client || '' : '';
-  const date    = document.getElementById('schedDate').value;
+// ─── Calendar ─────────────────────────────────────────────────────────────
+let calView    = 'week';
+let calOffset  = 0;
+let calEntries = [];
+let calLoaded  = false;
 
-  if (!date) { showToast('Pick a date'); return; }
-  if (!jobName) { showToast('Select a job'); return; }
+function loadCalendar() {
+  if (calLoaded) { renderCal(); return; }
+  document.getElementById('calContent').innerHTML = '<div class="cal-empty">Loading…</div>';
+  let pending = 2;
+  const done = () => { if (--pending === 0) { calLoaded = true; renderCal(); } };
 
-  const data = {
-    jobName,
-    client,
-    date,
-    startTime: document.getElementById('schedTime').value || null,
-    hours:     parseFloat(document.getElementById('schedHours').value) || 8,
-    notes:     document.getElementById('schedNotes').value.trim()
-  };
+  rpc('getDiaryEntries', 180, data => {
+    if (Array.isArray(data)) calEntries = data;
+    done();
+  }, () => done());
 
-  rpc('scheduleWork', data, res => {
-    if (res && res.success) {
-      showToast('Added to calendar ✓');
-      loadTodayEvents();
-      switchPanel('today');
-    } else {
-      showToast('Calendar error — check permissions');
+  rpc('getUpcomingMilestones', 90, data => {
+    if (Array.isArray(data)) {
+      const ids = new Set(calEntries.map(e => e.id).filter(Boolean));
+      calEntries = calEntries.concat(data.filter(e => !ids.has(e.id)));
     }
-  });
+    done();
+  }, () => done());
+}
+
+function setCalView(view, btn) {
+  calView = view; calOffset = 0;
+  document.querySelectorAll('.cal-view-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCal();
+}
+
+function calMove(dir) { calOffset += dir; renderCal(); }
+
+function getCalRange() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let start, end;
+  if (calView === 'day') {
+    start = new Date(today); start.setDate(start.getDate() + calOffset);
+    end = new Date(start);
+  } else if (calView === 'week') {
+    const dow = (today.getDay() + 6) % 7; // 0=Mon
+    start = new Date(today); start.setDate(today.getDate() - dow + calOffset * 7);
+    end = new Date(start); end.setDate(start.getDate() + 6);
+  } else if (calView === 'fortnight') {
+    const dow = (today.getDay() + 6) % 7;
+    start = new Date(today); start.setDate(today.getDate() - dow + calOffset * 14);
+    end = new Date(start); end.setDate(start.getDate() + 13);
+  } else {
+    start = new Date(today.getFullYear(), today.getMonth() + calOffset, 1);
+    end   = new Date(today.getFullYear(), today.getMonth() + calOffset + 1, 0);
+  }
+  return { start, end };
+}
+
+function renderCal() {
+  const { start, end } = getCalRange();
+  const todayISO = new Date().toISOString().split('T')[0];
+
+  // Range label
+  const fmt = d => d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+  const lbl = document.getElementById('calRangeLabel');
+  if (calView === 'day')   lbl.textContent = fmt(start);
+  else if (calView === 'month') lbl.textContent = start.toLocaleDateString('en-NZ', { month: 'long', year: 'numeric' });
+  else lbl.textContent = fmt(start) + ' – ' + fmt(end);
+
+  // Days in range
+  const days = [];
+  const cur = new Date(start);
+  while (cur <= end) { days.push(cur.toISOString().split('T')[0]); cur.setDate(cur.getDate() + 1); }
+
+  // Group entries by date
+  const startISO = start.toISOString().split('T')[0];
+  const endISO   = end.toISOString().split('T')[0];
+  const byDate   = {};
+  for (const e of calEntries) {
+    if (e.date >= startISO && e.date <= endISO) {
+      (byDate[e.date] = byDate[e.date] || []).push(e);
+    }
+  }
+
+  const typeColor = { work:'var(--green)', milestone:'var(--timber)', deadline:'var(--danger)', event:'var(--blue)' };
+  const typeIcon  = { work:'⚒', milestone:'📦', deadline:'🔴', event:'📅' };
+
+  const html = days.map(iso => {
+    const d       = new Date(iso + 'T00:00:00');
+    const isToday = iso === todayISO;
+    const isPast  = iso < todayISO;
+    const dow     = d.toLocaleDateString('en-NZ', { weekday: 'short' }).toUpperCase();
+    const dayNum  = d.getDate();
+    const mon     = d.toLocaleDateString('en-NZ', { month: 'short' });
+    const entries = byDate[iso] || [];
+
+    const entriesHTML = entries.length
+      ? entries.map(e => {
+          const job   = jobs.find(j => j.id === e.jobId || j.name === e.jobName);
+          const color = job?.color || typeColor[e.entryType || 'work'] || 'var(--muted)';
+          const icon  = typeIcon[e.entryType || 'work'] || '⚒';
+          const title = e.progressNotes || e.title || e.jobName || e.entryType || 'Entry';
+          const sub   = [e.jobName !== title ? e.jobName : '', e.hours ? e.hours + 'h' : ''].filter(Boolean).join(' · ');
+          return `<div class="cal-entry">
+            <div class="cal-dot" style="background:${color}"></div>
+            <div>
+              <div class="cal-entry-title">${icon} ${esc(title)}</div>
+              ${sub ? `<div class="cal-entry-sub">${esc(sub)}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')
+      : `<div class="cal-empty-day">—</div>`;
+
+    return `<div class="cal-day${isPast ? ' is-past' : ''}">
+      <div class="cal-day-header${isToday ? ' is-today' : ''}">
+        <span>${dow} <span class="cal-day-num">${dayNum}</span> ${mon}</span>
+        ${isToday ? '<span style="font-size:11px;font-weight:700;background:var(--green);color:white;padding:2px 8px;border-radius:10px">Today</span>' : ''}
+      </div>
+      ${entriesHTML}
+    </div>`;
+  }).join('');
+
+  document.getElementById('calContent').innerHTML = html || '<div class="cal-empty">No entries</div>';
 }
 
 // ─── Hours chips ─────────────────────────────────────────────────────────
