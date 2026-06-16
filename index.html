@@ -517,13 +517,13 @@
 
   /* ── Job bands (continuous Gantt-style lanes) ── */
   .cal-lanes { display: flex; gap: 2px; margin-bottom: 3px; }
-  .cal-lane { flex: 0 0 10px; height: 7px; background: transparent; }
+  .cal-lane { flex: 0 0 10px; height: 7px; background: transparent; cursor: pointer; }
   .cal-lane.active { background: var(--lane-color, var(--border)); }
   .cal-lane.cap-start.active { border-top-left-radius: 4px; border-top-right-radius: 4px; }
   .cal-lane.cap-end.active   { border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; }
   .cal-day.is-past .cal-lane.active { opacity: .5; }
   .cal-lane-labels { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
-  .cal-lane-label { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+  .cal-lane-label { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
   .cal-lane-label-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
   .cal-lane-label-end { font-size: 11px; font-weight: 400; color: var(--muted); }
   .cal-day.is-past .cal-lane-label { opacity: .55; }
@@ -1135,6 +1135,18 @@ function toggleJobDetail(jobId, jobName) {
     const innerEl = document.getElementById('job-entries-' + safeId);
     if (innerEl) innerEl.innerHTML = '<div style="font-size:13px;color:var(--muted)">Couldn\'t load entries — check connection.</div>';
   });
+}
+
+// Jump from a calendar job band to that job's detail in the Jobs tab
+function goToJob(jobId, jobName) {
+  switchPanel('jobs');
+  setTimeout(() => {
+    const item = document.getElementById('job-item-' + jobId);
+    if (!item) { showToast('Open "' + jobName + '" from the Jobs tab'); return; }
+    const detail = document.getElementById('job-detail-' + jobId);
+    if (!detail.classList.contains('open')) toggleJobDetail(jobId, jobName);
+    item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
 }
 
 function populateJobSelects() {
@@ -1795,13 +1807,15 @@ function renderCal() {
         const isLast   = j.scheduledEnd   === iso;
         const capCls   = [isFirst ? 'cap-start' : '', isLast ? 'cap-end' : ''].filter(Boolean).join(' ');
         const style    = active ? `--lane-color:${j.color}` : '';
-        return `<div class="cal-lane${active ? ' active' : ''} ${capCls}" style="${style}" title="${esc(j.name)}"></div>`;
+        const jname    = esc(j.name).replace(/'/g, "\\'");
+        return `<div class="cal-lane${active ? ' active' : ''} ${capCls}" style="${style}" title="${esc(j.name)}" onclick="goToJob('${esc(j.id)}','${jname}')"></div>`;
       }).join('');
 
       const startingToday = bandJobs.filter(j => j.scheduledStart === iso);
       const labels = startingToday.map(j => {
         const endLabel = j.scheduledStart === j.scheduledEnd ? 'today' : 'until ' + formatDate(j.scheduledEnd);
-        return `<span class="cal-lane-label">
+        const jname    = esc(j.name).replace(/'/g, "\\'");
+        return `<span class="cal-lane-label" onclick="goToJob('${esc(j.id)}','${jname}')">
           <span class="cal-lane-label-dot" style="background:${j.color}"></span>${esc(j.name)}
           <span class="cal-lane-label-end">${endLabel}</span>
         </span>`;
